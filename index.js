@@ -25,7 +25,7 @@ const verifyJWT = (req, res, next) => {
 }
 
 //mongodb connection setup
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.3krokas.mongodb.net/?retryWrites=true&w=majority`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -42,6 +42,7 @@ async function run() {
         // Connect the client to the server	(optional starting in v4.7)
         // await client.connect();
         const userCollection = client.db('easyMoves').collection('user');
+        const classCollection = client.db('easyMoves').collection('class');
 
         // Level wise user (admin, user, instructor) verify
         const verifyAdmin = async (req, res, next) => {
@@ -103,7 +104,7 @@ async function run() {
         //jwt verify API
         app.post('/jwt', (req, res) => {
             const user = req.body;
-            const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '5hr' })
+            const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1hr' })
             res.send({ token })
         })
 
@@ -121,6 +122,99 @@ async function run() {
             return res.send({ level: userRole })
         })
 
+        //return stats of admin
+        app.get('/admin/stats/:email', verifyJWT, verifyAdmin, async (req, res) => {
+            const email = req.params.email
+
+            if (req.decoded.email !== email) {
+                return res.status(401).send({ error: true, message: 'unauthorized access' })
+            }
+            const userResult = await userCollection.find().toArray()
+            const classResult = await classCollection.find().toArray()
+            res.send({ userResult, classResult })
+        })
+
+        //return stats of user
+        app.get('/user/stats/:email', verifyJWT, verifyUser, async (req, res) => {
+            const email = req.params.email
+
+            if (req.decoded.email !== email) {
+                return res.status(401).send({ error: true, message: 'unauthorized access' })
+            }
+
+            const query = { email: email }
+            const user = await userCollection.findOne(query)
+
+            return res.send({ message: user.name + ' Bhai' })
+
+        })
+        //return stats & data of instructor
+        app.get('/instructor/stats/:email', verifyJWT, verifyInstructor, async (req, res) => {
+            const email = req.params.email
+
+            if (req.decoded.email !== email) {
+                return res.status(401).send({ error: true, message: 'unauthorized access' })
+            }
+
+            const query = { instructorEmail: email }
+            const result = await classCollection.find(query).toArray()
+            res.send(result)
+        })
+
+        //add class by instructor
+        app.post('/instructor/addClass', verifyJWT, verifyInstructor, async (req, res) => {
+            const classData = req.body;
+            const result = await classCollection.insertOne(classData)
+            res.send(result)
+        })
+
+        //update class info by instructor
+        app.patch('/instructor/updateClass/:id', verifyJWT, verifyInstructor, async (req, res) => {
+            const id = req.params.id;
+            const updateClassData = req.body;
+            const filter = { _id: new ObjectId(id) };
+
+            const updatedInfo = {
+                $set: {
+                    className: updateClassData.className,
+                    price: updateClassData.price
+                }
+            };
+            const result = await classCollection.updateOne(filter, updatedInfo);
+            res.send(result)
+        })
+
+        //update user role by admin
+        app.patch('/admin/changeRole', verifyJWT, verifyAdmin, async (req, res) => {
+            const userId = req.query.userId;
+            const newRole = req.query.role;
+
+            const filter = { _id: new ObjectId(userId) }
+
+            const updatedInfo = {
+                $set: {
+                    role: newRole
+                }
+            }
+            const result = await userCollection.updateOne(filter, updatedInfo);
+            res.send(result)
+        })
+
+        //update classes information by admin
+        app.patch('/class/takeAction', verifyJWT, verifyAdmin, async (req, res) => {
+            const userId = req.query.userId;
+            const requiredAction = req.query.action;
+
+            const filter = { _id: new ObjectId(userId) }
+
+            const updatedInfo = {
+                $set: {
+                    status: requiredAction
+                }
+            }
+            const result = await classCollection.updateOne(filter, updatedInfo);
+            res.send(result)
+        })
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
