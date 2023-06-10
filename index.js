@@ -43,6 +43,7 @@ async function run() {
         // await client.connect();
         const userCollection = client.db('easyMoves').collection('user');
         const classCollection = client.db('easyMoves').collection('class');
+        const selectedClassCollection = client.db('easyMoves').collection('selectedClass');
 
         // Level wise user (admin, user, instructor) verify
         const verifyAdmin = async (req, res, next) => {
@@ -109,17 +110,13 @@ async function run() {
         })
 
         //return the level on authentication
-        app.get('/user/level/:email', verifyJWT, async (req, res) => {
-            const userEmail = req.params.email
-
-            if (req.decoded.email !== userEmail) {
-                return res.status(401).send({ error: true, message: 'unauthorized access' })
-            }
-
+        app.get('/user/level', async (req, res) => {
+            const userEmail = req.query.email
             const query = { email: userEmail }
             const user = await userCollection.findOne(query)
-            const userRole = user.role;
-            return res.send({ level: userRole })
+            const userRole = user?.role;
+
+            res.send({ level: userRole })
         })
 
         //return stats of admin
@@ -141,13 +138,11 @@ async function run() {
             if (req.decoded.email !== email) {
                 return res.status(401).send({ error: true, message: 'unauthorized access' })
             }
-
-            const query = { email: email }
-            const user = await userCollection.findOne(query)
-
-            return res.send({ message: user.name + ' Bhai' })
-
+            const query = { selectedBy: email }
+            const result = await selectedClassCollection.find(query).toArray()
+            res.send(result)
         })
+
         //return stats & data of instructor
         app.get('/instructor/stats/:email', verifyJWT, verifyInstructor, async (req, res) => {
             const email = req.params.email
@@ -230,6 +225,27 @@ async function run() {
             const result = await classCollection.updateOne(filter, updatedInfo);
             res.send(result)
         })
+
+        //get all the instructor info
+        app.get('/instructor', async (req, res) => {
+            const query = { role: 'instructor' }
+            const result = await userCollection.find(query).toArray()
+            res.send(result)
+        })
+        //get all the approved class info
+        app.get('/classes', async (req, res) => {
+            const query = { status: 'approved' }
+            const result = await classCollection.find(query).toArray()
+            res.send(result)
+        })
+
+        //class added to cart by User
+        app.post('/user/addClass', verifyJWT, verifyUser, async (req, res) => {
+            const classInfo = req.body;
+            const result = await selectedClassCollection.insertOne(classInfo)
+            res.send(result)
+        })
+
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
