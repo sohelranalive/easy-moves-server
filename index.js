@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const app = express()
 require('dotenv').config()
+const stripe = require('stripe')(process.env.PAYMENT_SECRET_KEY);
 const jwt = require('jsonwebtoken');
 const port = process.env.PORT || 5000
 
@@ -26,6 +27,7 @@ const verifyJWT = (req, res, next) => {
 
 //mongodb connection setup
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const req = require('express/lib/request');
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.3krokas.mongodb.net/?retryWrites=true&w=majority`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -44,6 +46,7 @@ async function run() {
         const userCollection = client.db('easyMoves').collection('user');
         const classCollection = client.db('easyMoves').collection('class');
         const selectedClassCollection = client.db('easyMoves').collection('selectedClass');
+        const paymentCollections = client.db('easyMoves').collection('payments');
 
         // Level wise user (admin, user, instructor) verify
         const verifyAdmin = async (req, res, next) => {
@@ -138,8 +141,58 @@ async function run() {
             if (req.decoded.email !== email) {
                 return res.status(401).send({ error: true, message: 'unauthorized access' })
             }
-            const query = { selectedBy: email }
-            const result = await selectedClassCollection.find(query).toArray()
+            //return all the selected class by user
+            const selectClassQuery = { selectedBy: email }
+            const selectedClassResult = await selectedClassCollection.find(selectClassQuery).toArray()
+
+            //return all the class enrolled by user after successful payment
+            const enrolledClassQuery = { email: email };
+            const usersAllPayment = await paymentCollections.find(enrolledClassQuery).toArray();
+            const classIds = usersAllPayment.flatMap(payment => payment.classesIds.map(classId => new ObjectId(classId)));
+
+            // const result = classIds.filter(items => items == classCollection._id)
+            // console.log(result);
+
+            // console.log(classIds);
+
+            // const filter = { _id: { $in: classIds } };
+            // const filter = {
+            //     $or: classIds.map(classId => ({ _id: classId }))
+            // };
+
+            // const filter = {
+            //     _id: { $all: classIds }
+            // };
+
+            // const filter = { _id: { $in: classIds } };
+
+            // const filter = { $or: classIds.map(classId => ({ _id: classId })) };
+
+            // const conditions = classIds.map(classId => ({ _id: classId }));
+            // const filter = { $or: conditions };
+
+            // const conditions = classIds.map(classId => ({ _id: classId }));
+            // const filter = { $or: conditions };
+
+            // // const filter = { _id: { $in: classIds } };
+
+            // const conditions = classIds.map(classId => ({ _id: classId }));
+            // const filter = { $or: conditions };
+
+            // const conditions = classIds.map(classId => ({ _id: classId }));
+            // const filter = { $or: conditions };
+
+            // const enrolledClassResult = await classCollection.find(filter).toArray();
+            const enrolledClassResult = null;
+
+            res.send({ selectedClassResult, enrolledClassResult })
+        })
+
+        //delete from selected items, as per students request
+        app.delete('/selectedClass/:id', verifyJWT, verifyUser, async (req, res) => {
+            const id = req.params.id
+            const query = { _id: new ObjectId(id) }
+            const result = await selectedClassCollection.deleteOne(query)
             res.send(result)
         })
 
@@ -239,11 +292,57 @@ async function run() {
             res.send(result)
         })
 
-        //class added to cart by User
+        //class added to cart by User & return is already exists in db
         app.post('/user/addClass', verifyJWT, verifyUser, async (req, res) => {
             const classInfo = req.body;
+            const query = { classId: classInfo.classId, selectedBy: classInfo.selectedBy };
+
+            const existResult = await selectedClassCollection.findOne(query)
+
+            if (existResult) {
+                return res.send({ isExists: true })
+            }
+
             const result = await selectedClassCollection.insertOne(classInfo)
             res.send(result)
+        })
+
+        //create payment intent api
+        app.post('/create-payment-intent', verifyJWT, verifyUser, async (req, res) => {
+            const { price } = req.body
+            const amount = price * 100;
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amount,
+                currency: 'usd',
+                payment_method_types: ['card']
+            })
+            res.send({
+                clientSecret: paymentIntent.client_secret
+            })
+        })
+
+        //all payment related API
+        app.post('/user/payments', verifyJWT, verifyUser, async (req, res) => {
+
+            //save payment info to db
+            const paymentInfo = req.body;
+            const savePaymentInfo = await paymentCollections.insertOne(paymentInfo)
+
+            //delete from selected classes who's payment is successful
+            const removeQuery = { _id: { $in: paymentInfo.selectedClassIds.map(id => new ObjectId(id)) } }
+            const deletedFromSelectedClass = await selectedClassCollection.deleteMany(removeQuery)
+
+            //decrease seats and increase enrolled count  
+            const filter = { _id: { $in: paymentInfo.classesIds.map(classId => new ObjectId(classId)) } }
+            const updateInfo = {
+                $inc: {
+                    availableSeats: -1, totalEnrolled: 1
+                }
+            }
+            const updatedClassInfo = await classCollection.updateMany(filter, updateInfo)
+
+            //returning all the results
+            res.send({ savePaymentInfo, deletedFromSelectedClass, updatedClassInfo })
         })
 
 
