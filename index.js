@@ -112,7 +112,7 @@ async function run() {
             res.send({ token })
         })
 
-        //return the level on authentication
+        //return the level of all users
         app.get('/user/level', async (req, res) => {
             const userEmail = req.query.email
             const query = { email: userEmail }
@@ -141,6 +141,7 @@ async function run() {
             if (req.decoded.email !== email) {
                 return res.status(401).send({ error: true, message: 'unauthorized access' })
             }
+
             //return all the selected class by user
             const selectClassQuery = { selectedBy: email }
             const selectedClassResult = await selectedClassCollection.find(selectClassQuery).toArray()
@@ -149,46 +150,13 @@ async function run() {
             const enrolledClassQuery = { email: email };
             const usersAllPayment = await paymentCollections.find(enrolledClassQuery).toArray();
             const classIds = usersAllPayment.flatMap(payment => payment.classesIds.map(classId => new ObjectId(classId)));
-
-            // const result = classIds.filter(items => items == classCollection._id)
-            // console.log(result);
-
-            // console.log(classIds);
-
-            // const filter = { _id: { $in: classIds } };
-            // const filter = {
-            //     $or: classIds.map(classId => ({ _id: classId }))
-            // };
-
-            // const filter = {
-            //     _id: { $all: classIds }
-            // };
-
-            // const filter = { _id: { $in: classIds } };
-
-            // const filter = { $or: classIds.map(classId => ({ _id: classId })) };
-
-            // const conditions = classIds.map(classId => ({ _id: classId }));
-            // const filter = { $or: conditions };
-
-            // const conditions = classIds.map(classId => ({ _id: classId }));
-            // const filter = { $or: conditions };
-
-            // // const filter = { _id: { $in: classIds } };
-
-            // const conditions = classIds.map(classId => ({ _id: classId }));
-            // const filter = { $or: conditions };
-
-            // const conditions = classIds.map(classId => ({ _id: classId }));
-            // const filter = { $or: conditions };
-
-            // const enrolledClassResult = await classCollection.find(filter).toArray();
-            const enrolledClassResult = null;
+            const filter = { _id: { $in: classIds } };
+            const enrolledClassResult = await classCollection.find(filter).toArray();
 
             res.send({ selectedClassResult, enrolledClassResult })
         })
 
-        //delete from selected items, as per students request
+        //delete from selected items, as per user/students request
         app.delete('/selectedClass/:id', verifyJWT, verifyUser, async (req, res) => {
             const id = req.params.id
             const query = { _id: new ObjectId(id) }
@@ -285,6 +253,7 @@ async function run() {
             const result = await userCollection.find(query).toArray()
             res.send(result)
         })
+
         //get all the approved class info
         app.get('/classes', async (req, res) => {
             const query = { status: 'approved' }
@@ -292,13 +261,34 @@ async function run() {
             res.send(result)
         })
 
-        //class added to cart by User & return is already exists in db
+        //get all the popular class information based on enrolled students
+        app.get('/classes/popular', async (req, res) => {
+            const filter = { status: 'approved' }
+            const options = {
+                sort: { totalEnrolled: -1 },
+            }
+            const allClasses = await classCollection.find(filter, options).toArray()
+            const popularClasses = allClasses.slice(0, 6)
+            res.send(popularClasses)
+        })
+
+        //class added to cart by User
         app.post('/user/addClass', verifyJWT, verifyUser, async (req, res) => {
             const classInfo = req.body;
+
+            //checking class already enrolled or not
+            const enrolledQuery = {
+                email: classInfo.selectedBy,
+                classesIds: { $in: [classInfo.classId] }
+            };
+            const enrolledResult = await paymentCollections.findOne(enrolledQuery)
+            if (enrolledResult) {
+                return res.send({ isEnrolled: true })
+            }
+
+            //checking this class already selected or not
             const query = { classId: classInfo.classId, selectedBy: classInfo.selectedBy };
-
             const existResult = await selectedClassCollection.findOne(query)
-
             if (existResult) {
                 return res.send({ isExists: true })
             }
