@@ -146,14 +146,16 @@ async function run() {
             const selectClassQuery = { selectedBy: email }
             const selectedClassResult = await selectedClassCollection.find(selectClassQuery).toArray()
 
-            //return all the class enrolled by user after successful payment
+            //return all the payment info to user
             const enrolledClassQuery = { email: email };
             const options = {
                 sort: { date: -1 }
             }
             const usersAllPayment = await paymentCollections.find(enrolledClassQuery, options).toArray();
-            const classIds = usersAllPayment.flatMap(payment => payment.classesIds.map(classId => new ObjectId(classId)));
-            const filter = { _id: { $in: classIds } };
+
+            //return all the classes info which payment is successful
+            const classIds = usersAllPayment.map(singleClass => new ObjectId(singleClass.classesId));
+            const filter = { _id: { $in: classIds } }
             const enrolledClassResult = await classCollection.find(filter).toArray();
 
             res.send({ selectedClassResult, enrolledClassResult, usersAllPayment })
@@ -322,17 +324,17 @@ async function run() {
             const savePaymentInfo = await paymentCollections.insertOne(paymentInfo)
 
             //delete from selected classes who's payment is successful
-            const removeQuery = { _id: { $in: paymentInfo.selectedClassIds.map(id => new ObjectId(id)) } }
-            const deletedFromSelectedClass = await selectedClassCollection.deleteMany(removeQuery)
+            const removeQuery = { _id: new ObjectId(paymentInfo.selectedClassId) }
+            const deletedFromSelectedClass = await selectedClassCollection.deleteOne(removeQuery)
 
             //decrease seats and increase enrolled count  
-            const filter = { _id: { $in: paymentInfo.classesIds.map(classId => new ObjectId(classId)) } }
+            const filter = { _id: new ObjectId(paymentInfo.classId) }
             const updateInfo = {
                 $inc: {
                     availableSeats: -1, totalEnrolled: 1
                 }
             }
-            const updatedClassInfo = await classCollection.updateMany(filter, updateInfo)
+            const updatedClassInfo = await classCollection.updateOne(filter, updateInfo)
 
             //returning all the results
             res.send({ savePaymentInfo, deletedFromSelectedClass, updatedClassInfo })
