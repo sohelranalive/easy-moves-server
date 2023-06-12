@@ -148,7 +148,10 @@ async function run() {
 
             //return all the class enrolled by user after successful payment
             const enrolledClassQuery = { email: email };
-            const usersAllPayment = await paymentCollections.find(enrolledClassQuery).toArray();
+            const options = {
+                sort: { date: -1 }
+            }
+            const usersAllPayment = await paymentCollections.find(enrolledClassQuery, options).toArray();
             const classIds = usersAllPayment.flatMap(payment => payment.classesIds.map(classId => new ObjectId(classId)));
             const filter = { _id: { $in: classIds } };
             const enrolledClassResult = await classCollection.find(filter).toArray();
