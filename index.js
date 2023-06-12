@@ -328,12 +328,13 @@ async function run() {
             const deletedFromSelectedClass = await selectedClassCollection.deleteOne(removeQuery)
 
             //decrease seats and increase enrolled count  
-            const filter = { _id: new ObjectId(paymentInfo.classId) }
+            const filter = { _id: new ObjectId(paymentInfo.classesId) }
             const updateInfo = {
                 $inc: {
-                    availableSeats: -1, totalEnrolled: 1
+                    availableSeats: -1,
+                    totalEnrolled: 1
                 }
-            }
+            };
             const updatedClassInfo = await classCollection.updateOne(filter, updateInfo)
 
             //returning all the results
