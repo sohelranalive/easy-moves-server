@@ -284,7 +284,7 @@ async function run() {
             //checking class already enrolled or not
             const enrolledQuery = {
                 email: classInfo.selectedBy,
-                classesIds: { $in: [classInfo.classId] }
+                classesId: classInfo.classId
             };
             const enrolledResult = await paymentCollections.findOne(enrolledQuery)
             if (enrolledResult) {
