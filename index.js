@@ -153,7 +153,7 @@ async function run() {
             const filter = { _id: { $in: classIds } };
             const enrolledClassResult = await classCollection.find(filter).toArray();
 
-            res.send({ selectedClassResult, enrolledClassResult })
+            res.send({ selectedClassResult, enrolledClassResult, usersAllPayment })
         })
 
         //delete from selected items, as per user/students request
